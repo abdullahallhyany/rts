@@ -99,6 +99,7 @@ export function runEnt(job, onDone, deps) {
   deps.registerChild(job.id, child)
 
   let stdoutText = ''
+  let processFinished = false
 
   child.stdout?.on('data', (data) => {
     const chunk = data.toString()
@@ -115,16 +116,21 @@ export function runEnt(job, onDone, deps) {
 
   child.on('error', (err) => {
     console.error('[testQueue] child error:', err.message)
-    deps.updateStatus(job.id, 'Failed')
-    deps.send('test-finished', {
-      id: job.id,
-      status: 'Failed',
-      completedAt: deps.formatCompletedAt()
-    })
-    onDone()
+    if (!processFinished) {
+      processFinished = true
+      deps.updateStatus(job.id, 'Failed')
+      deps.send('test-finished', {
+        id: job.id,
+        status: 'Failed',
+        completedAt: deps.formatCompletedAt()
+      })
+      onDone()
+    }
   })
 
   child.on('close', (code, signal) => {
+    if (processFinished) return
+    processFinished = true
     console.log('[testQueue] Process closed | code:', code, '| signal:', signal)
 
     const { entropy, fileBytes, monteCarloPi, serialCorrelationAbs, chiProbabilityPercent } =
@@ -165,7 +171,11 @@ export function runEnt(job, onDone, deps) {
     })
     const status = passed ? 'Passed' : 'Failed'
     deps.updateStatus(job.id, status)
-    deps.send('test-finished', { id: job.id, status, completedAt: deps.formatCompletedAt() })
+    deps.send('test-finished', {
+      id: job.id,
+      status,
+      completedAt: deps.formatCompletedAt()
+    })
     onDone()
   })
 }

@@ -51,16 +51,50 @@ export function runPractRand(job, onDone, deps) {
     onDone()
     return
   }
+
   const child = runResult.child
   deps.registerChild(job.id, child)
-  // pipe file into stdin instead of shell redirect
+
+  // Declare state variables BEFORE adding event handlers
+  let unusualSuspiciousCount = 0
+  let stoppedEarly = false
+  let processFinished = false
+
+  // Pipe file into stdin instead of shell redirect
   const inputStream = createReadStream(job.filePath)
   inputStream.on('error', (err) => {
     console.error('[testQueue] PractRand input error:', err.message)
   })
   inputStream.pipe(child.stdin)
 
+  function stopAndFail(reason) {
+    if (stoppedEarly) return
+    stoppedEarly = true
+    try {
+      if (platform() !== 'win32' && child.pid) {
+        process.kill(-child.pid, 'SIGTERM')
+      } else {
+        child.kill('SIGTERM')
+      }
+    } catch {
+      // ignore
+    }
+    console.log('[testQueue] Pract Rand stopped:', reason)
+    if (!processFinished) {
+      processFinished = true
+      deps.updateStatus(job.id, 'Failed')
+      deps.send('test-finished', {
+        id: job.id,
+        status: 'Failed',
+        completedAt: deps.formatCompletedAt()
+      })
+      onDone()
+    }
+  }
+
+  // Handle stdout data
   child.stdout?.on('data', (data) => {
+    if (stoppedEarly) return
     const text = data.toString()
     deps.appendOutput(job.id, text)
     console.log('[testQueue stdout]', text)
@@ -76,20 +110,23 @@ export function runPractRand(job, onDone, deps) {
       stopAndFail(
         `"unusual" + "suspicious" count reached ${unusualSuspiciousCount} (threshold ${UNUSUAL_SUSPICIOUS_THRESHOLD})`
       )
-      return
     }
   })
 
+  // Handle stderr data
   child.stderr?.on('data', (data) => {
+    if (stoppedEarly) return
     const text = data.toString()
     deps.appendOutput(job.id, text)
     console.log('[testQueue stderr]', text)
   })
 
+  // Handle process errors
   child.on('error', (err) => {
     console.error('[testQueue] child error:', err.message)
-    if (!stoppedEarly) {
+    if (!stoppedEarly && !processFinished) {
       stoppedEarly = true
+      processFinished = true
       deps.updateStatus(job.id, 'Failed')
       deps.send('test-finished', {
         id: job.id,
@@ -100,80 +137,18 @@ export function runPractRand(job, onDone, deps) {
     }
   })
 
+  // Handle process close (ONLY set final status here)
   child.on('close', (code, signal) => {
-    if (stoppedEarly) return
+    if (processFinished) return
+    processFinished = true
     console.log('[testQueue] Process closed | code:', code, '| signal:', signal)
-    const status = code === 0 ? 'Passed' : 'Failed'
+    const status = stoppedEarly ? 'Failed' : code === 0 ? 'Passed' : 'Failed'
     deps.updateStatus(job.id, status)
-    deps.send('test-finished', { id: job.id, status, completedAt: deps.formatCompletedAt() })
-    onDone()
-  })
-
-  let unusualSuspiciousCount = 0
-  let stoppedEarly = false
-
-  function stopAndFail(reason) {
-    if (stoppedEarly) return
-    stoppedEarly = true
-    try {
-      if (platform() !== 'win32' && child.pid) {
-        process.kill(-child.pid, 'SIGTERM')
-      } else {
-        child.kill('SIGTERM')
-      }
-    } catch {
-      // ignore
-    }
-    console.log('[testQueue] Pract Rand stopped:', reason)
     deps.send('test-finished', {
       id: job.id,
-      status: 'Failed',
+      status,
       completedAt: deps.formatCompletedAt()
     })
-    onDone()
-  }
-
-  child.stdout?.on('data', (data) => {
-    const chunk = data.toString()
-    console.log('[testQueue stdout]', chunk)
-    const lower = chunk.toLowerCase()
-    if (lower.includes('fail')) {
-      stopAndFail('"fail" occurred')
-      return
-    }
-    const unusualCount = (lower.match(/unusual/g) || []).length
-    const suspiciousCount = (lower.match(/suspicious/g) || []).length
-    unusualSuspiciousCount += unusualCount + suspiciousCount
-    if (unusualSuspiciousCount >= UNUSUAL_SUSPICIOUS_THRESHOLD) {
-      stopAndFail(
-        `"unusual" + "suspicious" count reached ${unusualSuspiciousCount} (threshold ${UNUSUAL_SUSPICIOUS_THRESHOLD})`
-      )
-      return
-    }
-  })
-
-  child.stderr?.on('data', (data) => {
-    console.log('[testQueue stderr]', data.toString())
-  })
-
-  child.on('error', (err) => {
-    console.error('[testQueue] child error:', err.message)
-    if (!stoppedEarly) {
-      stoppedEarly = true
-      deps.send('test-finished', {
-        id: job.id,
-        status: 'Failed',
-        completedAt: deps.formatCompletedAt()
-      })
-      onDone()
-    }
-  })
-
-  child.on('close', (code, signal) => {
-    if (stoppedEarly) return
-    console.log('[testQueue] Process closed | code:', code, '| signal:', signal)
-    const status = code === 0 ? 'Passed' : 'Failed'
-    deps.send('test-finished', { id: job.id, status, completedAt: deps.formatCompletedAt() })
     onDone()
   })
 }

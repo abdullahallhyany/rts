@@ -103,7 +103,12 @@ function runTest(job, onDone) {
     failNoRunner(job, onDone)
     return
   }
-  updateJobStatus(job.id, 'running')
+  // Update status to "In Progress" and record the start time
+  updateJobStatus(job.id, 'In Progress')
+  const rec = jobStore.get(job.id)
+  if (rec && !rec.startedAt) {
+    rec.startedAt = formatCompletedAt()
+  }
   currentJobId = job.id
   run(job, onDone, deps)
 }
@@ -143,7 +148,8 @@ export function enqueue(job, webContents) {
     id: job.id,
     type: job.type,
     filePath: job.filePath,
-    status: 'queued',
+    status: 'Queued',
+    startedAt: null,
     rawOutput: '',
     parsedResult: null,
     child: null

@@ -42,20 +42,9 @@ export function TestTable({ tests, onDownload, onDelete }) {
       </span>
     )
   }
-
   // propTypes for SortIcon (defined inside so the identifier is in scope)
   SortIcon.propTypes = {
     columnKey: PropTypes.string
-  }
-
-  function KebabMenu() {
-    return (
-      <button className="inline-flex h-8 w-8 items-center justify-center rounded-md text-slate-600 hover:bg-slate-50">
-        <svg viewBox="0 0 20 20" fill="currentColor" className="h-4 w-4">
-          <path d="M10 3a1.5 1.5 0 110 3 1.5 1.5 0 010-3zm0 5.5a1.5 1.5 0 110 3 1.5 1.5 0 010-3zM11.5 15.5a1.5 1.5 0 10-3 0 1.5 1.5 0 003 0z" />
-        </svg>
-      </button>
-    )
   }
 
   return (

@@ -51,6 +51,7 @@ export function runDieharder(job, onDone, deps) {
 
   let weakCount = 0
   let stoppedEarly = false
+  let processFinished = false
 
   function stopAndFail(reason) {
     if (stoppedEarly) return
@@ -66,12 +67,16 @@ export function runDieharder(job, onDone, deps) {
       // ignore
     }
     console.log('[testQueue] Die Harder stopped:', reason)
-    deps.send('test-finished', {
-      id: job.id,
-      status: 'Failed',
-      completedAt: deps.formatCompletedAt()
-    })
-    onDone()
+    if (!processFinished) {
+      processFinished = true
+      deps.updateStatus(job.id, 'Failed')
+      deps.send('test-finished', {
+        id: job.id,
+        status: 'Failed',
+        completedAt: deps.formatCompletedAt()
+      })
+      onDone()
+    }
   }
 
   child.stdout?.on('data', (data) => {
@@ -98,8 +103,9 @@ export function runDieharder(job, onDone, deps) {
 
   child.on('error', (err) => {
     console.error('[testQueue] child error:', err.message)
-    if (!stoppedEarly) {
+    if (!stoppedEarly && !processFinished) {
       stoppedEarly = true
+      processFinished = true
       deps.updateStatus(job.id, 'Failed')
       deps.send('test-finished', {
         id: job.id,
@@ -111,11 +117,16 @@ export function runDieharder(job, onDone, deps) {
   })
 
   child.on('close', (code, signal) => {
-    if (stoppedEarly) return
+    if (processFinished) return
+    processFinished = true
     console.log('[testQueue] Process closed | code:', code, '| signal:', signal)
-    const status = code === 0 ? 'Passed' : 'Failed'
+    const status = stoppedEarly ? 'Failed' : code === 0 ? 'Passed' : 'Failed'
     deps.updateStatus(job.id, status)
-    deps.send('test-finished', { id: job.id, status, completedAt: deps.formatCompletedAt() })
+    deps.send('test-finished', {
+      id: job.id,
+      status,
+      completedAt: deps.formatCompletedAt()
+    })
     onDone()
   })
 }
