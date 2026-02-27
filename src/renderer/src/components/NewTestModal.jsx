@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { createPortal } from 'react-dom'
+import PropTypes from 'prop-types'
 import uploadIcon from '../assets/upload.svg'
 
 /**
@@ -68,10 +69,7 @@ export function NewTestModal({ isOpen, onClose, onSubmit }) {
   const modalContent = (
     <div className="fixed select-none inset-0 z-50 flex items-center justify-center">
       {/* Backdrop - Semi-transparent grey overlay */}
-      <div
-        className="absolute inset-0 bg-gray-950 opacity-15"
-        onClick={handleClose}
-      />
+      <div className="absolute inset-0 bg-gray-950 opacity-15" onClick={handleClose} />
 
       {/* Modal */}
       <div className="relative bg-white rounded-xl shadow-xl w-full max-w-4xl mx-4 max-h-[90vh] overflow-y-auto">
@@ -85,18 +83,16 @@ export function NewTestModal({ isOpen, onClose, onSubmit }) {
           {/* File selection via OS dialog (path only, no read in JS) */}
           <div className="border-2 border-dashed rounded-lg p-8 text-center border-slate-300">
             <div className="flex items-center justify-center space-x-4">
-              <img
-                src={uploadIcon}
-                alt="Upload"
-                className="w-16 h-20 text-blue-500"
-              />
+              <img src={uploadIcon} alt="Upload" className="w-16 h-20 text-blue-500" />
               <div className="text-left">
                 {selectedFilePath ? (
                   <p className="text-slate-700 font-medium">
                     <span className="text-green-600">{selectedFileName}</span>
                   </p>
                 ) : (
-                  <p className="text-slate-700 font-medium">Select a file (path is used, file is not read)</p>
+                  <p className="text-slate-700 font-medium">
+                    Select a file (path is used, file is not read)
+                  </p>
                 )}
                 <button
                   type="button"
@@ -160,4 +156,10 @@ export function NewTestModal({ isOpen, onClose, onSubmit }) {
   )
 
   return createPortal(modalContent, document.body)
+}
+
+NewTestModal.propTypes = {
+  isOpen: PropTypes.bool.isRequired,
+  onClose: PropTypes.func.isRequired,
+  onSubmit: PropTypes.func.isRequired
 }

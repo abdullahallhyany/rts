@@ -2,6 +2,7 @@ import { rngTestsDir } from './paths.js'
 import { formatCompletedAt } from './util.js'
 import { attachChildHandlers } from './childHandlers.js'
 import { RUNNERS } from './runners/index.js'
+import { platform } from 'os'
 
 /** @type {import('electron').WebContents | null} */
 let sender = null
@@ -9,6 +10,10 @@ let sender = null
 /** @type {{ id: string, type: string, filePath: string }[]} */
 const queue = []
 let running = false
+let currentJobId = null
+
+// store extra metadata per job for result/download/delete
+const jobStore = new Map()
 
 function send(channel, payload) {
   if (sender && !sender.isDestroyed()) {
@@ -16,11 +21,73 @@ function send(channel, payload) {
   }
 }
 
+// helpers used by IPC and internal logic
+export function getJobRecord(id) {
+  return jobStore.get(id) || null
+}
+
+function killChild(child) {
+  try {
+    if (platform() !== 'win32' && child.pid) {
+      process.kill(-child.pid, 'SIGTERM')
+    } else {
+      child.kill('SIGTERM')
+    }
+  } catch {
+    // ignore errors when killing
+  }
+}
+
+export function deleteJobRecord(id) {
+  const rec = jobStore.get(id)
+  if (!rec) return false
+  // kill running process if any
+  if (rec.child) {
+    killChild(rec.child)
+  }
+  // remove from queue
+  const idx = queue.findIndex((j) => j.id === id)
+  if (idx !== -1) queue.splice(idx, 1)
+  const wasRunning = currentJobId === id
+  jobStore.delete(id)
+  if (wasRunning) {
+    running = false
+    currentJobId = null
+    startNext()
+  }
+  return true
+}
+
+function updateJobStatus(id, status) {
+  const rec = jobStore.get(id)
+  if (rec) rec.status = status
+}
+
+function appendJobOutput(id, text) {
+  const rec = jobStore.get(id)
+  if (rec) rec.rawOutput += text
+}
+
+function setParsedResult(id, parsed) {
+  const rec = jobStore.get(id)
+  if (rec) rec.parsedResult = parsed
+}
+
+function registerChild(id, child) {
+  const rec = jobStore.get(id)
+  if (rec) rec.child = child
+}
+
 const deps = {
   rngTestsDir,
   send,
   formatCompletedAt,
-  attachChildHandlers
+  attachChildHandlers,
+  // store helpers for runners
+  registerChild,
+  appendOutput: appendJobOutput,
+  setParsedResult,
+  updateStatus: updateJobStatus
 }
 
 function failNoRunner(job, onDone) {
@@ -36,6 +103,8 @@ function runTest(job, onDone) {
     failNoRunner(job, onDone)
     return
   }
+  updateJobStatus(job.id, 'running')
+  currentJobId = job.id
   run(job, onDone, deps)
 }
 
@@ -48,6 +117,7 @@ function startNext() {
   send('test-started', { id: job.id })
   runTest(job, () => {
     running = false
+    currentJobId = null
     startNext()
   })
 }
@@ -58,12 +128,26 @@ function startNext() {
  * @param {import('electron').WebContents} webContents
  */
 export function enqueue(job, webContents) {
-  console.log('[testQueue] enqueue called', { id: job?.id, type: job?.type, filePath: job?.filePath })
+  console.log('[testQueue] enqueue called', {
+    id: job?.id,
+    type: job?.type,
+    filePath: job?.filePath
+  })
   if (!job?.id || !job?.type || !job?.filePath) {
     console.warn('[testQueue] enqueue ignored: missing id, type, or filePath')
     return
   }
   if (sender === null) sender = webContents
+  // create record in store
+  jobStore.set(job.id, {
+    id: job.id,
+    type: job.type,
+    filePath: job.filePath,
+    status: 'queued',
+    rawOutput: '',
+    parsedResult: null,
+    child: null
+  })
   queue.push({ id: job.id, type: job.type, filePath: job.filePath })
   console.log('[testQueue] queue length:', queue.length)
   startNext()

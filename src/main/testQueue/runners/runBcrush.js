@@ -10,14 +10,22 @@ export function runBcrush(job, onDone, deps) {
     toolPath = getToolPath('TESTU01_BCRUSH')
   } catch (err) {
     console.error('[testQueue] Big Crush path error:', err.message)
-    deps.send('test-finished', { id: job.id, status: 'Failed', completedAt: deps.formatCompletedAt() })
+    deps.send('test-finished', {
+      id: job.id,
+      status: 'Failed',
+      completedAt: deps.formatCompletedAt()
+    })
     onDone()
     return
   }
   const valid = validateToolPath('TESTU01_BCRUSH', toolPath)
   if (!valid.success) {
     console.error('[testQueue] Big Crush invalid path:', toolPath)
-    deps.send('test-finished', { id: job.id, status: 'Failed', completedAt: deps.formatCompletedAt() })
+    deps.send('test-finished', {
+      id: job.id,
+      status: 'Failed',
+      completedAt: deps.formatCompletedAt()
+    })
     onDone()
     return
   }
@@ -27,10 +35,14 @@ export function runBcrush(job, onDone, deps) {
   const result = runCrossPlatform(toolPath, args, { cwd: crushingDir })
   if (!result.success) {
     console.error('[testQueue] Big Crush spawn error:', result.message || result.code)
-    deps.send('test-finished', { id: job.id, status: 'Failed', completedAt: deps.formatCompletedAt() })
+    deps.send('test-finished', {
+      id: job.id,
+      status: 'Failed',
+      completedAt: deps.formatCompletedAt()
+    })
     onDone()
     return
   }
   const child = result.child
-  deps.attachChildHandlers(child, job, onDone, deps.send)
+  deps.attachChildHandlers(child, job, onDone, deps.send, deps)
 }

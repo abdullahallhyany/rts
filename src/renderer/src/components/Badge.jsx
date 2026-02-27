@@ -2,11 +2,13 @@
  * @param {Object} props
  * @param {string} props.children - The status/result value
  */
+import PropTypes from 'prop-types'
+
 export function Badge({ children }) {
   // Color mapping based on the value
   const getColorClass = (value) => {
     const lowerValue = value.toLowerCase()
-    
+
     if (lowerValue === 'in progress') {
       return 'bg-blue-100 text-blue-700 ring-1 ring-blue-200'
     }
@@ -22,10 +24,16 @@ export function Badge({ children }) {
     // Default for other values
     return 'bg-slate-100 text-slate-700 ring-1 ring-slate-200'
   }
-  
+
   return (
-    <span className={`inline-flex items-center rounded px-2 py-0.5 text-xs font-medium ${getColorClass(children)}`}>
+    <span
+      className={`inline-flex items-center rounded px-2 py-0.5 text-xs font-medium ${getColorClass(children)}`}
+    >
       {children}
     </span>
   )
+}
+
+Badge.propTypes = {
+  children: PropTypes.node.isRequired
 }

@@ -14,7 +14,11 @@ export function runNist(job, onDone, deps) {
     toolPath = getToolPath('NIST')
   } catch (err) {
     console.error('[testQueue] NIST path resolution error:', err.message)
-    deps.send('test-finished', { id: job.id, status: 'Failed', completedAt: deps.formatCompletedAt() })
+    deps.send('test-finished', {
+      id: job.id,
+      status: 'Failed',
+      completedAt: deps.formatCompletedAt()
+    })
     onDone()
     return
   }
@@ -22,7 +26,11 @@ export function runNist(job, onDone, deps) {
   const valid = validateToolPath('NIST', toolPath)
   if (!valid.success) {
     console.error('[testQueue] NIST invalid path:', toolPath)
-    deps.send('test-finished', { id: job.id, status: 'Failed', completedAt: deps.formatCompletedAt() })
+    deps.send('test-finished', {
+      id: job.id,
+      status: 'Failed',
+      completedAt: deps.formatCompletedAt()
+    })
     onDone()
     return
   }
@@ -32,21 +40,35 @@ export function runNist(job, onDone, deps) {
   const result = runCrossPlatform(toolPath, args, { cwd: stsDir })
   if (!result.success) {
     console.error('[testQueue] NIST spawn error:', result.message || result.code)
-    deps.send('test-finished', { id: job.id, status: 'Failed', completedAt: deps.formatCompletedAt() })
+    deps.send('test-finished', {
+      id: job.id,
+      status: 'Failed',
+      completedAt: deps.formatCompletedAt()
+    })
     onDone()
     return
   }
   const child = result.child
+  deps.registerChild(job.id, child)
 
   child.stdout?.on('data', (data) => {
-    console.log('[testQueue stdout]', data.toString())
+    const text = data.toString()
+    deps.appendOutput(job.id, text)
+    console.log('[testQueue stdout]', text)
   })
   child.stderr?.on('data', (data) => {
-    console.log('[testQueue stderr]', data.toString())
+    const text = data.toString()
+    deps.appendOutput(job.id, text)
+    console.log('[testQueue stderr]', text)
   })
   child.on('error', (err) => {
     console.error('[testQueue] child error:', err.message)
-    deps.send('test-finished', { id: job.id, status: 'Failed', completedAt: deps.formatCompletedAt() })
+    deps.updateStatus(job.id, 'Failed')
+    deps.send('test-finished', {
+      id: job.id,
+      status: 'Failed',
+      completedAt: deps.formatCompletedAt()
+    })
     onDone()
   })
   child.on('close', (code, signal) => {
@@ -57,6 +79,7 @@ export function runNist(job, onDone, deps) {
       try {
         const content = readFileSync(reportPath, 'utf8')
         const analysis = analyzeStsReport(content)
+        deps.setParsedResult(job.id, analysis)
         if (analysis.failed) {
           status = 'Failed'
           console.log('[testQueue] NIST STS analysis:', analysis.reason)
@@ -65,6 +88,7 @@ export function runNist(job, onDone, deps) {
         console.warn('[testQueue] NIST STS report read failed:', err.message)
       }
     }
+    deps.updateStatus(job.id, status)
     deps.send('test-finished', { id: job.id, status, completedAt: deps.formatCompletedAt() })
     onDone()
   })

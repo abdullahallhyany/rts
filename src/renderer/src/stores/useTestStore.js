@@ -39,7 +39,7 @@ function formatStartedAt(date) {
   })
 }
 
-export const useTestStore = create((set, get) => ({
+export const useTestStore = create((set) => ({
   // Initial state
   tests: [],
   searchQuery: '',
@@ -47,7 +47,7 @@ export const useTestStore = create((set, get) => ({
 
   // Actions
   setSearchQuery: (query) => set({ searchQuery: query }),
-  
+
   addTest: (test) => {
     const id = test.id ?? Date.now().toString()
     const newTest = {
@@ -60,9 +60,7 @@ export const useTestStore = create((set, get) => ({
 
   updateTest: (id, updates) => {
     set((state) => ({
-      tests: state.tests.map((test) =>
-        test.id === id ? { ...test, ...updates } : test
-      )
+      tests: state.tests.map((test) => (test.id === id ? { ...test, ...updates } : test))
     }))
   },
 
@@ -81,8 +79,9 @@ export const useTestStore = create((set, get) => ({
 // Selectors
 export const useFilteredTests = () => {
   const { tests, searchQuery } = useTestStore()
-  return tests.filter(test =>
-    test.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    (test.type && test.type.toLowerCase().includes(searchQuery.toLowerCase()))
+  return tests.filter(
+    (test) =>
+      test.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      (test.type && test.type.toLowerCase().includes(searchQuery.toLowerCase()))
   )
 }

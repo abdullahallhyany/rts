@@ -5,7 +5,7 @@ import { readFileSync, writeFileSync, existsSync } from 'fs'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import icon from '../../resources/icon.png?asset'
 import { exec } from 'child_process'
-import { enqueue } from './testQueue/index.js'
+import { enqueue, getJobRecord, deleteJobRecord } from './testQueue/index.js'
 import { ensureRngDeps } from './ensureDeps.js'
 
 function createWindow() {
@@ -80,7 +80,7 @@ app.whenReady().then(async () => {
       properties: ['openFile'],
       title: 'Select RNG data file'
     })
-    return result.canceled ? null : result.filePaths[0] ?? null
+    return result.canceled ? null : (result.filePaths[0] ?? null)
   })
 
   // Test queue: FIFO, one test at a time; when one finishes, the next starts
@@ -108,6 +108,53 @@ app.whenReady().then(async () => {
     } catch (err) {
       console.warn('[main] Failed to save tests:', err.message)
     }
+  })
+
+  // download result handler
+  ipcMain.handle('download-test-result', async (event, jobId) => {
+    const rec = getJobRecord(jobId)
+    if (!rec) return { success: false, error: 'not_found' }
+    const win = BrowserWindow.fromWebContents(event.sender)
+    const defaultName = `${rec.type.replace(/\s+/g, '_')}_${jobId}.txt`
+    const { canceled, filePath } = await dialog.showSaveDialog(win, {
+      defaultPath: defaultName,
+      filters: [{ name: 'Text', extensions: ['txt'] }]
+    })
+    if (canceled || !filePath) return { success: false, canceled: true }
+    const lines = []
+    lines.push(`Test Type: ${rec.type}`)
+    lines.push(`File Path: ${rec.filePath}`)
+    lines.push(`Status: ${rec.status}`)
+    lines.push('')
+    lines.push('Raw Output:')
+    lines.push(rec.rawOutput || '')
+    lines.push('')
+    lines.push('Parsed Result:')
+    lines.push(rec.parsedResult ? JSON.stringify(rec.parsedResult, null, 2) : 'null')
+    try {
+      writeFileSync(filePath, lines.join('\n'), 'utf8')
+      return { success: true, path: filePath }
+    } catch (err) {
+      return { success: false, error: err.message }
+    }
+  })
+
+  ipcMain.handle('delete-test-job', async (event, jobId) => {
+    const rec = getJobRecord(jobId)
+    if (!rec) return { success: false }
+    if (rec.status === 'running') {
+      const win = BrowserWindow.fromWebContents(event.sender)
+      const { response } = await dialog.showMessageBox(win, {
+        type: 'warning',
+        buttons: ['Yes', 'No'],
+        defaultId: 1,
+        title: 'Confirm',
+        message: 'Job is currently running. Are you sure you want to delete it?'
+      })
+      if (response !== 0) return { success: false }
+    }
+    const ok = deleteJobRecord(jobId)
+    return { success: ok }
   })
 
   createWindow()

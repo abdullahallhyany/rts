@@ -97,24 +97,44 @@ function App() {
     }
   }
 
-  const handleDownload = (testId) => {
-    console.log('Download clicked for test:', testId)
-  }
-
-  const handleRunLs = () => {
-    if (!window.electron || !window.electron.ipcRenderer) {
-      console.warn('ipcRenderer not available')
+  const handleDownload = async (testId) => {
+    const ipc = window.electron?.ipcRenderer
+    if (!ipc?.invoke) {
+      console.warn('[App] ipcRenderer not available for download')
       return
     }
+    try {
+      const res = await ipc.invoke('download-test-result', testId)
+      if (res.success) {
+        alert(`Saved result to ${res.path}`)
+      } else if (res.canceled) {
+        // user cancelled save dialog
+      } else {
+        alert(`Download failed: ${res.error || 'unknown error'}`)
+      }
+    } catch (err) {
+      console.error('[App] download error', err)
+      alert('Download failed: ' + (err.message || err))
+    }
+  }
 
-    // Listen once for the result
-    window.electron.ipcRenderer.once('ls-result', (_event, output) => {
-      console.log('ls output:', output)
-      alert(output)
-    })
-
-    // Send command to main process; '.' means current working directory of the app
-    window.electron.ipcRenderer.send('run-ls', '.')
+  const handleDelete = async (testId) => {
+    const ipc = window.electron?.ipcRenderer
+    if (!ipc?.invoke) {
+      console.warn('[App] ipcRenderer not available for delete')
+      return
+    }
+    try {
+      const res = await ipc.invoke('delete-test-job', testId)
+      if (res.success) {
+        useTestStore.getState().deleteTest(testId)
+        alert('Test deleted')
+      } else {
+        // cancellation or failure
+      }
+    } catch (err) {
+      console.error('[App] delete error', err)
+    }
   }
 
   return (
@@ -128,23 +148,18 @@ function App() {
             <div className="flex items-center justify-between gap-4">
               <SearchBar />
               <div className="flex items-center gap-2">
-                
                 <NewTestButton onClick={handleNewTest} />
               </div>
             </div>
           </div>
 
           {/* Table */}
-          <TestTable tests={tests} onDownload={handleDownload} />
+          <TestTable tests={tests} onDownload={handleDownload} onDelete={handleDelete} />
         </div>
       </div>
 
       {/* Modal */}
-      <NewTestModal
-        isOpen={isModalOpen}
-        onClose={handleModalClose}
-        onSubmit={handleModalSubmit}
-      />
+      <NewTestModal isOpen={isModalOpen} onClose={handleModalClose} onSubmit={handleModalSubmit} />
     </div>
   )
 }

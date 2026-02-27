@@ -131,7 +131,9 @@ export async function ensureRngDeps() {
         console.log('[ensureDeps] libtestu01 missing; attempting to install', pkg)
         await installPackage(pkg, distroId)
       } else {
-        console.warn('[ensureDeps] libtestu01 missing; unknown distro. Install manually (e.g. sudo apt install libtestu01-0-dev).')
+        console.warn(
+          '[ensureDeps] libtestu01 missing; unknown distro. Install manually (e.g. sudo apt install libtestu01-0-dev).'
+        )
       }
     }
   }
@@ -144,7 +146,9 @@ export async function ensureRngDeps() {
       console.log('[ensureDeps] dieharder missing; attempting to install', pkg)
       await installPackage(pkg, distroId)
     } else {
-      console.warn('[ensureDeps] dieharder missing; unknown distro. Install manually (e.g. sudo apt install dieharder).')
+      console.warn(
+        '[ensureDeps] dieharder missing; unknown distro. Install manually (e.g. sudo apt install dieharder).'
+      )
     }
   }
 }

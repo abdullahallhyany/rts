@@ -62,14 +62,22 @@ export function runEnt(job, onDone, deps) {
     toolPath = getToolPath('ENT')
   } catch (err) {
     console.error('[testQueue] Ent path error:', err.message)
-    deps.send('test-finished', { id: job.id, status: 'Failed', completedAt: deps.formatCompletedAt() })
+    deps.send('test-finished', {
+      id: job.id,
+      status: 'Failed',
+      completedAt: deps.formatCompletedAt()
+    })
     onDone()
     return
   }
   const valid = validateToolPath('ENT', toolPath)
   if (!valid.success) {
     console.error('[testQueue] Ent invalid path:', toolPath)
-    deps.send('test-finished', { id: job.id, status: 'Failed', completedAt: deps.formatCompletedAt() })
+    deps.send('test-finished', {
+      id: job.id,
+      status: 'Failed',
+      completedAt: deps.formatCompletedAt()
+    })
     onDone()
     return
   }
@@ -79,27 +87,40 @@ export function runEnt(job, onDone, deps) {
   const result = runCrossPlatform(toolPath, args, { cwd: entDir })
   if (!result.success) {
     console.error('[testQueue] Ent spawn error:', result.message || result.code)
-    deps.send('test-finished', { id: job.id, status: 'Failed', completedAt: deps.formatCompletedAt() })
+    deps.send('test-finished', {
+      id: job.id,
+      status: 'Failed',
+      completedAt: deps.formatCompletedAt()
+    })
     onDone()
     return
   }
   const child = result.child
+  deps.registerChild(job.id, child)
 
   let stdoutText = ''
 
   child.stdout?.on('data', (data) => {
     const chunk = data.toString()
+    deps.appendOutput(job.id, chunk)
     console.log('[testQueue stdout]', chunk)
     stdoutText += chunk
   })
 
   child.stderr?.on('data', (data) => {
-    console.log('[testQueue stderr]', data.toString())
+    const text = data.toString()
+    deps.appendOutput(job.id, text)
+    console.log('[testQueue stderr]', text)
   })
 
   child.on('error', (err) => {
     console.error('[testQueue] child error:', err.message)
-    deps.send('test-finished', { id: job.id, status: 'Failed', completedAt: deps.formatCompletedAt() })
+    deps.updateStatus(job.id, 'Failed')
+    deps.send('test-finished', {
+      id: job.id,
+      status: 'Failed',
+      completedAt: deps.formatCompletedAt()
+    })
     onDone()
   })
 
@@ -108,6 +129,9 @@ export function runEnt(job, onDone, deps) {
 
     const { entropy, fileBytes, monteCarloPi, serialCorrelationAbs, chiProbabilityPercent } =
       parseEntOutput(stdoutText)
+
+    const parsed = { entropy, fileBytes, monteCarloPi, serialCorrelationAbs, chiProbabilityPercent }
+    deps.setParsedResult(job.id, parsed)
 
     // Extracted consts for your calcs
     const ENTROPY = entropy
@@ -140,6 +164,7 @@ export function runEnt(job, onDone, deps) {
       chiProbabilityPercent
     })
     const status = passed ? 'Passed' : 'Failed'
+    deps.updateStatus(job.id, status)
     deps.send('test-finished', { id: job.id, status, completedAt: deps.formatCompletedAt() })
     onDone()
   })

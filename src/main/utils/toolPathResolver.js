@@ -1,6 +1,6 @@
 import { existsSync } from 'fs'
 import { platform } from 'os'
-import { join, dirname } from 'path'
+import { join } from 'path'
 import { rngTestsDir } from '../testQueue/paths.js'
 import { execSync } from 'child_process'
 
@@ -16,7 +16,7 @@ function wslPathExists(wslPath) {
     // use wsl test -e, redirect stderr so execSync doesn't throw on output
     execSync(`wsl test -e "${wslPath.replace(/"/g, '\\"')}"`, { stdio: 'ignore' })
     return true
-  } catch (_err) {
+  } catch {
     return false
   }
 }
@@ -27,9 +27,11 @@ function convertWindowsPathToWsl(winPath) {
   try {
     // wslpath may not be available if WSL isn't installed; guard against errors
     const quoted = winPath.replace(/"/g, '\\"')
-    const result = execSync(`wsl wslpath -a -u "${quoted}"`, { stdio: ['ignore', 'pipe', 'ignore'] })
+    const result = execSync(`wsl wslpath -a -u "${quoted}"`, {
+      stdio: ['ignore', 'pipe', 'ignore']
+    })
     return result.toString().trim()
-  } catch (_) {
+  } catch {
     return null
   }
 }
@@ -140,7 +142,7 @@ export function runCrossPlatform(toolPath, args = [], opts = {}) {
 
   if (plt === 'win32') {
     // 🔥 أهم سطر: نحول كل مسارات Windows داخل args
-    execArgs = args.map(arg => {
+    execArgs = args.map((arg) => {
       if (typeof arg === 'string' && /^[A-Za-z]:\\/.test(arg)) {
         const converted = convertWindowsPathToWsl(arg)
         return converted || arg
@@ -153,7 +155,7 @@ export function runCrossPlatform(toolPath, args = [], opts = {}) {
   }
 
   try {
-    const child = spawn(execPath, execArgs, { shell: false,windowsHide: true, ...opts })
+    const child = spawn(execPath, execArgs, { shell: false, windowsHide: true, ...opts })
     return { success: true, child }
   } catch (err) {
     return { success: false, code: 'SPAWN_FAILED', message: err.message }

@@ -13,14 +13,22 @@ export function runDieharder(job, onDone, deps) {
     toolPath = getToolPath('DIEHARDER')
   } catch (err) {
     console.error('[testQueue] Dieharder path resolution error:', err.message)
-    deps.send('test-finished', { id: job.id, status: 'Failed', completedAt: deps.formatCompletedAt() })
+    deps.send('test-finished', {
+      id: job.id,
+      status: 'Failed',
+      completedAt: deps.formatCompletedAt()
+    })
     onDone()
     return
   }
   const valid = validateToolPath('DIEHARDER', toolPath)
   if (!valid.success) {
     console.error('[testQueue] Dieharder invalid path:', toolPath)
-    deps.send('test-finished', { id: job.id, status: 'Failed', completedAt: deps.formatCompletedAt() })
+    deps.send('test-finished', {
+      id: job.id,
+      status: 'Failed',
+      completedAt: deps.formatCompletedAt()
+    })
     onDone()
     return
   }
@@ -30,11 +38,16 @@ export function runDieharder(job, onDone, deps) {
   const runResult = runCrossPlatform(toolPath, args, { detached: true })
   if (!runResult.success) {
     console.error('[testQueue] Die Harder spawn error:', runResult.message || runResult.code)
-    deps.send('test-finished', { id: job.id, status: 'Failed', completedAt: deps.formatCompletedAt() })
+    deps.send('test-finished', {
+      id: job.id,
+      status: 'Failed',
+      completedAt: deps.formatCompletedAt()
+    })
     onDone()
     return
   }
   const child = runResult.child
+  deps.registerChild(job.id, child)
 
   let weakCount = 0
   let stoppedEarly = false
@@ -49,14 +62,21 @@ export function runDieharder(job, onDone, deps) {
       } else {
         child.kill('SIGTERM')
       }
-    } catch (_) {}
+    } catch {
+      // ignore
+    }
     console.log('[testQueue] Die Harder stopped:', reason)
-    deps.send('test-finished', { id: job.id, status: 'Failed', completedAt: deps.formatCompletedAt() })
+    deps.send('test-finished', {
+      id: job.id,
+      status: 'Failed',
+      completedAt: deps.formatCompletedAt()
+    })
     onDone()
   }
 
   child.stdout?.on('data', (data) => {
     const chunk = data.toString()
+    deps.appendOutput(job.id, chunk)
     console.log('[testQueue stdout]', chunk)
     const lower = chunk.toLowerCase()
     if (lower.includes('fail')) {
@@ -71,14 +91,21 @@ export function runDieharder(job, onDone, deps) {
   })
 
   child.stderr?.on('data', (data) => {
-    console.log('[testQueue stderr]', data.toString())
+    const txt = data.toString()
+    deps.appendOutput(job.id, txt)
+    console.log('[testQueue stderr]', txt)
   })
 
   child.on('error', (err) => {
     console.error('[testQueue] child error:', err.message)
     if (!stoppedEarly) {
       stoppedEarly = true
-      deps.send('test-finished', { id: job.id, status: 'Failed', completedAt: deps.formatCompletedAt() })
+      deps.updateStatus(job.id, 'Failed')
+      deps.send('test-finished', {
+        id: job.id,
+        status: 'Failed',
+        completedAt: deps.formatCompletedAt()
+      })
       onDone()
     }
   })
@@ -87,6 +114,7 @@ export function runDieharder(job, onDone, deps) {
     if (stoppedEarly) return
     console.log('[testQueue] Process closed | code:', code, '| signal:', signal)
     const status = code === 0 ? 'Passed' : 'Failed'
+    deps.updateStatus(job.id, status)
     deps.send('test-finished', { id: job.id, status, completedAt: deps.formatCompletedAt() })
     onDone()
   })
