@@ -153,7 +153,7 @@ export function runCrossPlatform(toolPath, args = [], opts = {}) {
   }
 
   try {
-    const child = spawn(execPath, execArgs, { shell: false, ...opts })
+    const child = spawn(execPath, execArgs, { shell: false,windowsHide: true, ...opts })
     return { success: true, child }
   } catch (err) {
     return { success: false, code: 'SPAWN_FAILED', message: err.message }
