@@ -1,27 +1,36 @@
-import { spawn } from 'child_process'
 import { join } from 'path'
-import { existsSync } from 'fs'
+import { getToolPath, validateToolPath, runCrossPlatform } from '../../utils/toolPathResolver.js'
 
 export function runBcrush(job, onDone, deps) {
   const dir = deps.rngTestsDir()
   const crushingDir = join(dir, 'crushing')
-  const exe = 'Bcrush'
-  const command = join(crushingDir, exe)
-  if (!existsSync(command)) {
-    console.error('[testQueue] Executable not found:', command)
+
+  let toolPath
+  try {
+    toolPath = getToolPath('TESTU01_BCRUSH')
+  } catch (err) {
+    console.error('[testQueue] Big Crush path error:', err.message)
     deps.send('test-finished', { id: job.id, status: 'Failed', completedAt: deps.formatCompletedAt() })
     onDone()
     return
   }
-  const quote = (p) => '"' + p.replace(/"/g, '\\"') + '"'
-  const shellCmd = `${quote(command)} ${quote(job.filePath)}`
-  if (!shellCmd.trim()) {
-    console.error('[testQueue] Big Crush: shell command is empty')
+  const valid = validateToolPath('TESTU01_BCRUSH', toolPath)
+  if (!valid.success) {
+    console.error('[testQueue] Big Crush invalid path:', toolPath)
     deps.send('test-finished', { id: job.id, status: 'Failed', completedAt: deps.formatCompletedAt() })
     onDone()
     return
   }
-  console.log('[testQueue] Big Crush shell:', shellCmd)
-  const child = spawn(shellCmd, [], { cwd: crushingDir, shell: true })
+
+  const args = [job.filePath]
+  console.log('[testQueue] Big Crush command:', toolPath, args.join(' '))
+  const result = runCrossPlatform(toolPath, args, { cwd: crushingDir })
+  if (!result.success) {
+    console.error('[testQueue] Big Crush spawn error:', result.message || result.code)
+    deps.send('test-finished', { id: job.id, status: 'Failed', completedAt: deps.formatCompletedAt() })
+    onDone()
+    return
+  }
+  const child = result.child
   deps.attachChildHandlers(child, job, onDone, deps.send)
 }

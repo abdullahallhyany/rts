@@ -1,6 +1,5 @@
-import { spawn } from 'child_process'
 import { join } from 'path'
-import { existsSync } from 'fs'
+import { getToolPath, validateToolPath, runCrossPlatform } from '../../utils/toolPathResolver.js'
 
 /**
  * Parse ent stdout and extract: entropy, file bytes, Monte Carlo Pi, |serial correlation|, chi probability %.
@@ -57,24 +56,34 @@ function entPassFail(parsed) {
 export function runEnt(job, onDone, deps) {
   const dir = deps.rngTestsDir()
   const entDir = join(dir, 'ent')
-  const exe = 'ent'
-  const command = join(entDir, exe)
-  if (!existsSync(command)) {
-    console.error('[testQueue] Executable not found:', command)
+
+  let toolPath
+  try {
+    toolPath = getToolPath('ENT')
+  } catch (err) {
+    console.error('[testQueue] Ent path error:', err.message)
     deps.send('test-finished', { id: job.id, status: 'Failed', completedAt: deps.formatCompletedAt() })
     onDone()
     return
   }
-  const quote = (p) => '"' + p.replace(/"/g, '\\"') + '"'
-  const shellCmd = `${quote(command)} ${quote(job.filePath)}`
-  if (!shellCmd.trim()) {
-    console.error('[testQueue] Ent: shell command is empty')
+  const valid = validateToolPath('ENT', toolPath)
+  if (!valid.success) {
+    console.error('[testQueue] Ent invalid path:', toolPath)
     deps.send('test-finished', { id: job.id, status: 'Failed', completedAt: deps.formatCompletedAt() })
     onDone()
     return
   }
-  console.log('[testQueue] Ent shell:', shellCmd)
-  const child = spawn(shellCmd, [], { cwd: entDir, shell: true })
+
+  const args = [job.filePath]
+  console.log('[testQueue] Ent command:', toolPath, args.join(' '))
+  const result = runCrossPlatform(toolPath, args, { cwd: entDir })
+  if (!result.success) {
+    console.error('[testQueue] Ent spawn error:', result.message || result.code)
+    deps.send('test-finished', { id: job.id, status: 'Failed', completedAt: deps.formatCompletedAt() })
+    onDone()
+    return
+  }
+  const child = result.child
 
   let stdoutText = ''
 

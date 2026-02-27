@@ -3,6 +3,8 @@ dist
 out
 .DS_Store
 .eslintcache
+.env*
 *.log*
 
 rngTests/randomdata
+package-lock.json

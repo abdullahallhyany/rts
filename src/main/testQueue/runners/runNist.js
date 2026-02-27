@@ -1,31 +1,42 @@
-import { spawn } from 'child_process'
 import { join } from 'path'
-import { existsSync, readFileSync } from 'fs'
+import { readFileSync, existsSync } from 'fs'
 import { analyzeStsReport } from '../stsAnalysis.js'
+import { getToolPath, validateToolPath, runCrossPlatform } from '../../utils/toolPathResolver.js'
 
 const REPORT_PATH = ['sts', 'experiments', 'AlgorithmTesting', 'finalAnalysisReport.txt']
 
 export function runNist(job, onDone, deps) {
   const dir = deps.rngTestsDir()
   const stsDir = join(dir, 'sts')
-  const exe = 'nist'
-  const command = join(stsDir, exe)
-  if (!existsSync(command)) {
-    console.error('[testQueue] Executable not found:', command)
+
+  let toolPath
+  try {
+    toolPath = getToolPath('NIST')
+  } catch (err) {
+    console.error('[testQueue] NIST path resolution error:', err.message)
     deps.send('test-finished', { id: job.id, status: 'Failed', completedAt: deps.formatCompletedAt() })
     onDone()
     return
   }
-  const quote = (p) => '"' + p.replace(/"/g, '\\"') + '"'
-  const shellCmd = `${quote(command)} -fast -fileoutput 1000000 ${quote(job.filePath)}`
-  if (!shellCmd.trim()) {
-    console.error('[testQueue] NIST STS: shell command is empty')
+
+  const valid = validateToolPath('NIST', toolPath)
+  if (!valid.success) {
+    console.error('[testQueue] NIST invalid path:', toolPath)
     deps.send('test-finished', { id: job.id, status: 'Failed', completedAt: deps.formatCompletedAt() })
     onDone()
     return
   }
-  console.log('[testQueue] NIST STS shell:', shellCmd)
-  const child = spawn(shellCmd, [], { cwd: stsDir, shell: true })
+
+  const args = ['-fast', '-fileoutput', '1000000', job.filePath]
+  console.log('[testQueue] NIST STS command:', toolPath, args.join(' '))
+  const result = runCrossPlatform(toolPath, args, { cwd: stsDir })
+  if (!result.success) {
+    console.error('[testQueue] NIST spawn error:', result.message || result.code)
+    deps.send('test-finished', { id: job.id, status: 'Failed', completedAt: deps.formatCompletedAt() })
+    onDone()
+    return
+  }
+  const child = result.child
 
   child.stdout?.on('data', (data) => {
     console.log('[testQueue stdout]', data.toString())

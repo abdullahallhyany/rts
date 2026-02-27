@@ -1,27 +1,36 @@
-import { spawn } from 'child_process'
 import { join } from 'path'
-import { existsSync } from 'fs'
+import { getToolPath, validateToolPath, runCrossPlatform } from '../../utils/toolPathResolver.js'
 
 export function runAlpha(job, onDone, deps) {
   const dir = deps.rngTestsDir()
   const crushingDir = join(dir, 'crushing')
-  const exe = 'alpha'
-  const command = join(crushingDir, exe)
-  if (!existsSync(command)) {
-    console.error('[testQueue] Executable not found:', command)
+
+  let toolPath
+  try {
+    toolPath = getToolPath('TESTU01_ALPHA')
+  } catch (err) {
+    console.error('[testQueue] Alpha path error:', err.message)
     deps.send('test-finished', { id: job.id, status: 'Failed', completedAt: deps.formatCompletedAt() })
     onDone()
     return
   }
-  const quote = (p) => '"' + p.replace(/"/g, '\\"') + '"'
-  const shellCmd = `${quote(command)} ${quote(job.filePath)}`
-  if (!shellCmd.trim()) {
-    console.error('[testQueue] Alpha: shell command is empty')
+  const valid = validateToolPath('TESTU01_ALPHA', toolPath)
+  if (!valid.success) {
+    console.error('[testQueue] Alpha invalid path:', toolPath)
     deps.send('test-finished', { id: job.id, status: 'Failed', completedAt: deps.formatCompletedAt() })
     onDone()
     return
   }
-  console.log('[testQueue] Alpha shell:', shellCmd)
-  const child = spawn(shellCmd, [], { cwd: crushingDir, shell: true })
+
+  const args = [job.filePath]
+  console.log('[testQueue] Alpha command:', toolPath, args.join(' '))
+  const result = runCrossPlatform(toolPath, args, { cwd: crushingDir })
+  if (!result.success) {
+    console.error('[testQueue] Alpha spawn error:', result.message || result.code)
+    deps.send('test-finished', { id: job.id, status: 'Failed', completedAt: deps.formatCompletedAt() })
+    onDone()
+    return
+  }
+  const child = result.child
   deps.attachChildHandlers(child, job, onDone, deps.send)
 }

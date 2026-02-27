@@ -1,7 +1,7 @@
-import { spawn } from 'child_process'
 import { join } from 'path'
-import { existsSync } from 'fs'
+import { createReadStream } from 'fs'
 import { platform } from 'os'
+import { getToolPath, validateToolPath, runCrossPlatform } from '../../utils/toolPathResolver.js'
 
 const UNUSUAL_SUSPICIOUS_THRESHOLD = 3
 
@@ -12,24 +12,40 @@ const UNUSUAL_SUSPICIOUS_THRESHOLD = 3
 export function runPractRand(job, onDone, deps) {
   const dir = deps.rngTestsDir()
   const practrandDir = join(dir, 'practrand')
-  const exe = 'RNG_test'
-  const command = join(practrandDir, exe)
-  if (!existsSync(command)) {
-    console.error('[testQueue] Executable not found:', command)
+
+  let toolPath
+  try {
+    toolPath = getToolPath('PRACTRAND')
+  } catch (err) {
+    console.error('[testQueue] PractRand path resolution error:', err.message)
     deps.send('test-finished', { id: job.id, status: 'Failed', completedAt: deps.formatCompletedAt() })
     onDone()
     return
   }
-  const quote = (p) => '"' + p.replace(/"/g, '\\"') + '"'
-  const shellCmd = `${quote(command)} stdin64 -a -multithreaded < ${quote(job.filePath)}`
-  if (!shellCmd.trim()) {
-    console.error('[testQueue] Pract Rand: shell command is empty')
+  const valid = validateToolPath('PRACTRAND', toolPath)
+  if (!valid.success) {
+    console.error('[testQueue] PractRand invalid path:', toolPath)
     deps.send('test-finished', { id: job.id, status: 'Failed', completedAt: deps.formatCompletedAt() })
     onDone()
     return
   }
-  console.log('[testQueue] Pract Rand shell:', shellCmd)
-  const child = spawn(shellCmd, [], { cwd: practrandDir, shell: true, detached: true })
+
+  const args = ['stdin64', '-a', '-multithreaded']
+  console.log('[testQueue] Pract Rand command:', toolPath, args.join(' '))
+  const runResult = runCrossPlatform(toolPath, args, { cwd: practrandDir, detached: true })
+  if (!runResult.success) {
+    console.error('[testQueue] PractRand spawn error:', runResult.message || runResult.code)
+    deps.send('test-finished', { id: job.id, status: 'Failed', completedAt: deps.formatCompletedAt() })
+    onDone()
+    return
+  }
+  const child = runResult.child
+  // pipe file into stdin instead of shell redirect
+  const inputStream = createReadStream(job.filePath)
+  inputStream.on('error', (err) => {
+    console.error('[testQueue] PractRand input error:', err.message)
+  })
+  inputStream.pipe(child.stdin)
 
   let unusualSuspiciousCount = 0
   let stoppedEarly = false

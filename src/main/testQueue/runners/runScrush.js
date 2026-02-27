@@ -1,29 +1,38 @@
-import { spawn } from 'child_process'
 import { join } from 'path'
-import { existsSync } from 'fs'
 import { smallCrushPassFail } from '../crushingAnalysis.js'
+import { getToolPath, validateToolPath, runCrossPlatform } from '../../utils/toolPathResolver.js'
 
 export function runScrush(job, onDone, deps) {
   const dir = deps.rngTestsDir()
   const crushingDir = join(dir, 'crushing')
-  const exe = 'scrush'
-  const command = join(crushingDir, exe)
-  if (!existsSync(command)) {
-    console.error('[testQueue] Executable not found:', command)
+
+  let toolPath
+  try {
+    toolPath = getToolPath('TESTU01_SCRUSH')
+  } catch (err) {
+    console.error('[testQueue] Small Crush path error:', err.message)
     deps.send('test-finished', { id: job.id, status: 'Failed', completedAt: deps.formatCompletedAt() })
     onDone()
     return
   }
-  const quote = (p) => '"' + p.replace(/"/g, '\\"') + '"'
-  const shellCmd = `${quote(command)} ${quote(job.filePath)}`
-  if (!shellCmd.trim()) {
-    console.error('[testQueue] Small Crush: shell command is empty')
+  const valid = validateToolPath('TESTU01_SCRUSH', toolPath)
+  if (!valid.success) {
+    console.error('[testQueue] Small Crush invalid path:', toolPath)
     deps.send('test-finished', { id: job.id, status: 'Failed', completedAt: deps.formatCompletedAt() })
     onDone()
     return
   }
-  console.log('[testQueue] Small Crush shell:', shellCmd)
-  const child = spawn(shellCmd, [], { cwd: crushingDir, shell: true })
+
+  const args = [job.filePath]
+  console.log('[testQueue] Small Crush command:', toolPath, args.join(' '))
+  const result = runCrossPlatform(toolPath, args, { cwd: crushingDir })
+  if (!result.success) {
+    console.error('[testQueue] Small Crush spawn error:', result.message || result.code)
+    deps.send('test-finished', { id: job.id, status: 'Failed', completedAt: deps.formatCompletedAt() })
+    onDone()
+    return
+  }
+  const child = result.child
 
   let stdoutText = ''
 
