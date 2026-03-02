@@ -1,5 +1,12 @@
 import { platform } from 'os'
-import { getToolPath, validateToolPath, runCrossPlatform } from '../../utils/toolPathResolver.js'
+import { basename, dirname } from 'path'
+import {
+  getToolPath,
+  validateToolPath,
+  runCrossPlatform,
+  getExecutionMode,
+  getDockerImage
+} from '../../utils/toolPathResolver.js'
 
 const WEAK_FAIL_THRESHOLD = 3
 
@@ -8,34 +15,60 @@ const WEAK_FAIL_THRESHOLD = 3
  * Stops and fails the test if "weak" appears 3+ times or "fail" appears at least once (case insensitive).
  */
 export function runDieharder(job, onDone, deps) {
-  let toolPath
-  try {
-    toolPath = getToolPath('DIEHARDER')
-  } catch (err) {
-    console.error('[testQueue] Dieharder path resolution error:', err.message)
-    deps.send('test-finished', {
-      id: job.id,
-      status: 'Failed',
-      completedAt: deps.formatCompletedAt()
-    })
-    onDone()
-    return
-  }
-  const valid = validateToolPath('DIEHARDER', toolPath)
-  if (!valid.success) {
-    console.error('[testQueue] Dieharder invalid path:', toolPath)
-    deps.send('test-finished', {
-      id: job.id,
-      status: 'Failed',
-      completedAt: deps.formatCompletedAt()
-    })
-    onDone()
-    return
+  const executionMode = getExecutionMode()
+
+  let runResult
+
+  if (executionMode === 'docker') {
+    const inputFolder = dirname(job.filePath)
+    const inputFile = basename(job.filePath)
+    const image = getDockerImage()
+    const args = [
+      'run',
+      '--rm',
+      '-v',
+      `${inputFolder}:/data`,
+      image,
+      'dieharder',
+      '-a',
+      '-g',
+      '201',
+      '-f',
+      `/data/${inputFile}`
+    ]
+    console.log('[testQueue] Die Harder command: docker', args.join(' '))
+    runResult = runCrossPlatform('docker', args, { detached: true })
+  } else {
+    let toolPath
+    try {
+      toolPath = getToolPath('DIEHARDER')
+    } catch (err) {
+      console.error('[testQueue] Dieharder path resolution error:', err.message)
+      deps.send('test-finished', {
+        id: job.id,
+        status: 'Failed',
+        completedAt: deps.formatCompletedAt()
+      })
+      onDone()
+      return
+    }
+    const valid = validateToolPath('DIEHARDER', toolPath)
+    if (!valid.success) {
+      console.error('[testQueue] Dieharder invalid path:', toolPath)
+      deps.send('test-finished', {
+        id: job.id,
+        status: 'Failed',
+        completedAt: deps.formatCompletedAt()
+      })
+      onDone()
+      return
+    }
+
+    const args = ['-a', '-g', '201', '-f', job.filePath]
+    console.log('[testQueue] Die Harder command:', toolPath, args.join(' '))
+    runResult = runCrossPlatform(toolPath, args, { detached: true })
   }
 
-  const args = ['-a', '-g', '201', '-f', job.filePath]
-  console.log('[testQueue] Die Harder command:', toolPath, args.join(' '))
-  const runResult = runCrossPlatform(toolPath, args, { detached: true })
   if (!runResult.success) {
     console.error('[testQueue] Die Harder spawn error:', runResult.message || runResult.code)
     deps.send('test-finished', {

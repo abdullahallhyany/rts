@@ -1,43 +1,62 @@
-import { join } from 'path'
+import { basename, dirname, join } from 'path'
 import { readFileSync, existsSync } from 'fs'
 import { analyzeStsReport } from '../stsAnalysis.js'
-import { getToolPath, validateToolPath, runCrossPlatform } from '../../utils/toolPathResolver.js'
+import {
+  getToolPath,
+  validateToolPath,
+  runCrossPlatform,
+  getExecutionMode,
+  getDockerImage
+} from '../../utils/toolPathResolver.js'
 
 const REPORT_PATH = ['sts', 'experiments', 'AlgorithmTesting', 'finalAnalysisReport.txt']
 
 export function runNist(job, onDone, deps) {
   const dir = deps.rngTestsDir()
   const stsDir = join(dir, 'sts')
+  const executionMode = getExecutionMode()
 
-  let toolPath
-  try {
-    toolPath = getToolPath('NIST')
-  } catch (err) {
-    console.error('[testQueue] NIST path resolution error:', err.message)
-    deps.send('test-finished', {
-      id: job.id,
-      status: 'Failed',
-      completedAt: deps.formatCompletedAt()
-    })
-    onDone()
-    return
+  let result
+
+  if (executionMode === 'docker') {
+    const inputFolder = dirname(job.filePath)
+    const inputFile = basename(job.filePath)
+    const image = getDockerImage()
+    const args = ['run', '--rm', '-v', `${inputFolder}:/data`, image, 'niststs']
+    console.log('[testQueue] NIST STS command: docker', args.join(' '), '| input:', inputFile)
+    result = runCrossPlatform('docker', args)
+  } else {
+    let toolPath
+    try {
+      toolPath = getToolPath('NIST')
+    } catch (err) {
+      console.error('[testQueue] NIST path resolution error:', err.message)
+      deps.send('test-finished', {
+        id: job.id,
+        status: 'Failed',
+        completedAt: deps.formatCompletedAt()
+      })
+      onDone()
+      return
+    }
+
+    const valid = validateToolPath('NIST', toolPath)
+    if (!valid.success) {
+      console.error('[testQueue] NIST invalid path:', toolPath)
+      deps.send('test-finished', {
+        id: job.id,
+        status: 'Failed',
+        completedAt: deps.formatCompletedAt()
+      })
+      onDone()
+      return
+    }
+
+    const args = ['-fast', '-fileoutput', '1000000', job.filePath]
+    console.log('[testQueue] NIST STS command:', toolPath, args.join(' '))
+    result = runCrossPlatform(toolPath, args, { cwd: stsDir })
   }
 
-  const valid = validateToolPath('NIST', toolPath)
-  if (!valid.success) {
-    console.error('[testQueue] NIST invalid path:', toolPath)
-    deps.send('test-finished', {
-      id: job.id,
-      status: 'Failed',
-      completedAt: deps.formatCompletedAt()
-    })
-    onDone()
-    return
-  }
-
-  const args = ['-fast', '-fileoutput', '1000000', job.filePath]
-  console.log('[testQueue] NIST STS command:', toolPath, args.join(' '))
-  const result = runCrossPlatform(toolPath, args, { cwd: stsDir })
   if (!result.success) {
     console.error('[testQueue] NIST spawn error:', result.message || result.code)
     deps.send('test-finished', {

@@ -4,6 +4,16 @@ import { join } from 'path'
 import { rngTestsDir } from '../testQueue/paths.js'
 import { execSync } from 'child_process'
 
+export function getExecutionMode() {
+  const mode = String(process.env.RNG_EXECUTION_MODE || '').toLowerCase()
+  if (mode === 'wsl' || mode === 'linux' || mode === 'docker') return mode
+  return platform() === 'win32' ? 'wsl' : 'linux'
+}
+
+export function getDockerImage() {
+  return process.env.RNG_DOCKER_IMAGE || 'rts-rng-env'
+}
+
 // Helper to determine if a command string is a simple executable name (no path separators)
 function isSimpleCommand(cmd) {
   return typeof cmd === 'string' && !cmd.includes('/') && !cmd.includes('\\')
@@ -44,8 +54,6 @@ function defaultPathFor(toolName) {
       return join(dir, 'sts', 'nist')
     case 'PRACTRAND':
       return join(dir, 'practrand', 'RNG_test')
-    case 'DIEHARDER':
-      return 'dieharder'
     case 'TESTU01_CRUSH':
       return join(dir, 'crushing', 'crush')
     case 'TESTU01_BCRUSH':
@@ -56,8 +64,12 @@ function defaultPathFor(toolName) {
       return join(dir, 'crushing', 'scrush')
     case 'TESTU01_ALPHA':
       return join(dir, 'crushing', 'alpha')
+    // system-installed utilities should just be executable names; they are not
+    // part of the rngTests bundle.
     case 'ENT':
-      return join(dir, 'ent', 'ent')
+      return 'ent'
+    case 'DIEHARDER':
+      return 'dieharder'
     default:
       throw new Error(`Unknown tool name: ${toolName}`)
   }
@@ -137,10 +149,14 @@ export function validateToolPath(toolName, toolPath) {
  */
 export function runCrossPlatform(toolPath, args = [], opts = {}) {
   const plt = platform()
+  const executionMode = getExecutionMode()
   let execPath = toolPath
   let execArgs = args
 
-  if (plt === 'win32') {
+  if (executionMode === 'docker' && toolPath === 'docker') {
+    execPath = 'docker'
+    execArgs = args
+  } else if (executionMode === 'wsl' || (executionMode === 'docker' && plt === 'win32')) {
     // 🔥 أهم سطر: نحول كل مسارات Windows داخل args
     execArgs = args.map((arg) => {
       if (typeof arg === 'string' && /^[A-Za-z]:\\/.test(arg)) {
@@ -152,6 +168,9 @@ export function runCrossPlatform(toolPath, args = [], opts = {}) {
 
     execPath = 'wsl'
     execArgs = [toolPath, ...execArgs]
+  } else if (executionMode === 'linux' && plt === 'win32') {
+    execPath = toolPath
+    execArgs = args
   }
 
   try {
