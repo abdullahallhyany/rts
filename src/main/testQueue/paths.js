@@ -1,30 +1,23 @@
-import { app } from 'electron'
-import { join } from 'path'
-import { existsSync } from 'fs'
+import { join } from "path";
+import { app } from "electron";
 
-let _rngTestsDir = null
-
-export function getRngTestsDir() {
-  const projectRoot = join(__dirname, '..', '..', '..')
-  const appPath = app.getAppPath()
-  const candidates = [
-    join(process.cwd(), 'rngTests'),
-    join(appPath, 'rngTests'),
-    join(appPath, 'app.asar.unpacked', 'rngTests'),
-    join(projectRoot, 'rngTests')
-  ]
-  for (const dir of candidates) {
-    if (existsSync(dir)) {
-      console.log('[testQueue] Using RNG_TESTS_DIR:', dir)
-      return dir
-    }
-  }
-  const fallback = join(process.cwd(), 'rngTests')
-  console.warn('[testQueue] rngTests not found; tried:', candidates, '| using:', fallback)
-  return fallback
-}
+let cachedRngTestsDir = null;
 
 export function rngTestsDir() {
-  if (_rngTestsDir === null) _rngTestsDir = getRngTestsDir()
-  return _rngTestsDir
+  if (cachedRngTestsDir) {
+    return cachedRngTestsDir;
+  }
+
+  let resolvedPath;
+  if (app.isPackaged) {
+    // packaged build – electron-builder puts unpacked files under app.asar.unpacked
+    resolvedPath = join(process.resourcesPath, "app.asar.unpacked", "rngTests");
+  } else {
+    // development mode
+    resolvedPath = join(process.cwd(), "rngTests");
+  }
+
+  console.log("[RNG_TESTS_DIR]", resolvedPath);
+  cachedRngTestsDir = resolvedPath;
+  return resolvedPath;
 }

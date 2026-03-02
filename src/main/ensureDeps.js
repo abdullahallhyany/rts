@@ -2,7 +2,7 @@ import { execFile } from 'child_process'
 import { promisify } from 'util'
 import { join } from 'path'
 import { existsSync, readFileSync } from 'fs'
-import { getRngTestsDir } from './testQueue/paths.js'
+import { rngTestsDir } from './testQueue/paths.js'
 
 const execFileAsync = promisify(execFile)
 
@@ -121,7 +121,7 @@ export async function ensureRngDeps() {
   const distroId = getDistroId()
 
   // Ensure libtestu01 (for crushing tests)
-  const rngDir = getRngTestsDir()
+  const rngDir = rngTestsDir()
   const crushPath = join(rngDir, 'crushing', 'crush')
   if (existsSync(crushPath)) {
     const missingLib = await isLibtestu01Missing(crushPath)

@@ -16,6 +16,8 @@ asarUnpack:
   - resources/**
   - rngTests/**
 win:
+  target:
+    - nsis
   executableName: rts
 nsis:
   artifactName: ${name}-${version}-setup.${ext}
